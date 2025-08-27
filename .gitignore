@@ -1,0 +1,37 @@
+# Fichiers et dossiers générés par Docker
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Répertoires de données Docker
+volumes/
+data/
+db_data/
+logs/
+tmp/
+
+# Fichiers d'environnement
+.env
+.env.*
+
+# Fichiers de configuration sensibles
+docker-compose.override.yml
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Fichiers de sauvegarde d'éditeurs
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
+
+*.html
+
+# Fichiers de build
+build/
+dist/
+node_modules/ # Si vous utilisez Node.js dans vos conteneurs
