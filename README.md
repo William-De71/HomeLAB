@@ -1,9 +1,9 @@
 # HomeLAB
 
-Fichier docker-compose pour mon utilisation personnel
+Script d'installation des services Docker de mon installation personnel
 
 ## Contenu
-
+<a href="gladysassistant"><img src="https://gladysassistant.com/en/img/external/github-gladys-logo.png" alt="gladysassistant" height="30" align="top"/></a> [`Gladys Assistant`](GladysAssistant)
 <!-- 
 - <a href="affine"><img src="https://paper.pro/icons/mac/affine.png" alt="affine" height="35" align="top"/></a> [`Affine`](affine)
 - <a href="nextcloud"><img src="https://avatars.githubusercontent.com/u/19211038?s=200&v=4" alt="nextcloud" height="30" align="top"/></a> [`Nextcloud`](nextcloud)

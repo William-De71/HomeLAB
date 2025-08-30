@@ -29,9 +29,12 @@ Thumbs.db
 .idea/
 .vscode/
 
-*.html
-
 # Fichiers de build
 build/
 dist/
 node_modules/ # Si vous utilisez Node.js dans vos conteneurs
+
+*.html
+*.mk
+docker-compose.yml
+temp.*
