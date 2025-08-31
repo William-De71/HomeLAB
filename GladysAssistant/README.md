@@ -18,13 +18,10 @@ Le dépôt contient plusieurs services, vous pouvez cloner **uniquement le dossi
 
 ```bash
 # 1. Cloner le dépôt sans extraire les fichiers
-git clone --no-checkout https://github.com/William-De71/HomeLAB.git
-cd homeLAB
+git clone --filter=blob:none --sparse https://github.com/William-De71/HomeLAB.git
+cd HomeLAB
 
-# 2. Activer sparse-checkout
-git sparse-checkout init --cone
-
-# 3. Choisir uniquement le dossier du service
+# 2. Choisir uniquement le dossier du service
 git sparse-checkout set GladysAssistant
 ```
 
