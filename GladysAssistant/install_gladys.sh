@@ -5,16 +5,32 @@ set -euo pipefail
 script_version="0.0.1" # if there is a VERSION.md in this script's folder, it will take priority for version number
 readonly script_author="wderen"
 readonly script_created="2025-08-27"
-readonly run_as_root=-1 # run_as_root: 0 = don't check anything / 1 = script MUST run as root / -1 = script MAY NOT run as root
 
 # ========================
 # Configuration
 # ========================
-if [ ! -f ./utils.sh ]; then
-  echo "❌ Fichier utils.sh introuvable dans le dossier courant." >&2
+# Résolution relative au script, et non au répertoire courant : le script reste
+# lançable depuis n'importe où. On accepte aussi une copie locale de utils.sh
+# pour les clonages partiels ne contenant pas le dossier common/.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+UTILS_FILE=""
+for candidate in "$SCRIPT_DIR/../common/utils.sh" "$SCRIPT_DIR/utils.sh"; do
+  if [ -f "$candidate" ]; then
+    UTILS_FILE="$candidate"
+    break
+  fi
+done
+
+if [ -z "$UTILS_FILE" ]; then
+  echo "❌ Fichier utils.sh introuvable (cherché dans ../common/ et $SCRIPT_DIR)." >&2
+  echo "   En cas de clonage partiel, incluez le dossier common/ :" >&2
+  echo "   git sparse-checkout set common GladysAssistant" >&2
   exit 1
 fi
-source ./utils.sh
+
+# shellcheck source=../common/utils.sh
+source "$UTILS_FILE"
 
 # ========================
 # Variables globales
@@ -24,6 +40,13 @@ INSTALL_DIR=""
 DOCKER_LOGGING_MAX_SIZE="10m"
 DOCKER_LOGGING_MAX_FILE="3"
 IP_LOCALE=""
+
+# Images épinglées pour garder des installations reproductibles.
+GLADYS_IMAGE="gladysassistant/gladys:v4"
+WATCHTOWER_IMAGE="nickfedor/watchtower:latest"
+
+# Durée maximale d'attente du démarrage de Gladys (secondes).
+STARTUP_TIMEOUT=60
 
 
 # FUNCTION: print_usage
@@ -58,7 +81,8 @@ function parse_params() {
         VERBOSE=true
         ;;
       *)
-        echo -e "${RED}❌ Option inconnue : $1${RESET}" >&2
+        echo -e "${RED}❌ Option inconnue : $param${RESET}" >&2
+        print_usage
         exit 1
         ;;
     esac
@@ -129,10 +153,9 @@ function generate_docker_compose() {
   log_info "Génération du docker-compose.yml dans $INSTALL_DIR"
 
   cat > "$INSTALL_DIR/docker-compose.yml" <<EOF
-
 services:
   gladys:
-    image: gladysassistant/gladys:v4
+    image: ${GLADYS_IMAGE:?GLADYS_IMAGE not set}
     container_name: gladys
     restart: unless-stopped
     privileged: true
@@ -148,24 +171,30 @@ services:
       - /var/lib/gladysassistant:/var/lib/gladysassistant
       - /dev:/dev
       - /run/udev:/run/udev:ro
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     logging:
       driver: "json-file"
       options:
         max-size: ${DOCKER_LOGGING_MAX_SIZE:?DOCKER_LOGGING_MAX_SIZE not set}
-        max-file: ${DOCKER_LOGGING_MAX_FILE:?DOCKER_LOGGING_MAX_FILE not set}
-  
+        max-file: "${DOCKER_LOGGING_MAX_FILE:?DOCKER_LOGGING_MAX_FILE not set}"
+
   watchtower:
-    image: containrrr/watchtower
-    restart: unless-stopped
+    image: ${WATCHTOWER_IMAGE:?WATCHTOWER_IMAGE not set}
     container_name: watchtower
-    command: --cleanup --include-restarting
+    restart: unless-stopped
+    # --label-enable : ne met à jour que les conteneurs explicitement labellisés,
+    # pour ne pas toucher aux autres services du homelab.
+    command: --cleanup --include-restarting --label-enable
+    environment:
+      TZ: Europe/Paris
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     logging:
+      driver: "json-file"
       options:
         max-size: ${DOCKER_LOGGING_MAX_SIZE:?DOCKER_LOGGING_MAX_SIZE not set}
-        max-file: ${DOCKER_LOGGING_MAX_FILE:?DOCKER_LOGGING_MAX_FILE not set}
-        
+        max-file: "${DOCKER_LOGGING_MAX_FILE:?DOCKER_LOGGING_MAX_FILE not set}"
 EOF
 
   log_success "docker-compose.yml généré dans $INSTALL_DIR"
@@ -184,8 +213,11 @@ function start_stack() {
   # Vérification si Docker est en cours d'exécution
   check_docker_running
 
+  # Validation de la syntaxe du fichier généré avant toute tentative de lancement
+  validate_compose_file "${INSTALL_DIR}/docker-compose.yml"
+
   # Vérification des conflits de conteneurs
-  check_container_exists ${INSTALL_DIR}/docker-compose.yml
+  check_container_exists "${INSTALL_DIR}/docker-compose.yml"
 
   # Lancement des containers
   log_info "Démarrage des containers..."
@@ -200,29 +232,52 @@ function start_stack() {
 function test_gladys_access() {
   log_info "🌐 Test d'accès à Gladys Assistant"
 
-  sleep 10 # attente que Gladys démarre
+  local url="http://${IP_LOCALE}"
+  local elapsed=0
+  local http_code=""
+  local ready=false
 
-  if curl -k --silent --head http://$IP_LOCALE | grep "HTTP/1.1 200" >/dev/null; then
-    log_success "🎉 Gladys Assistant est prêt et accessible à l'adresse suivante: http://$IP_LOCALE"
+  # Attente active : Gladys peut mettre plusieurs dizaines de secondes à répondre
+  # au premier démarrage (migrations SQLite).
+  echo -n "⏳ Attente du démarrage de Gladys "
+  while [ "$elapsed" -lt "$STARTUP_TIMEOUT" ]; do
+    http_code=$(curl -k --silent --show-error --output /dev/null \
+      --max-time 5 --write-out '%{http_code}' "$url" 2>/dev/null || echo "000")
 
-    read -p "👉 Voulez-vous ouvrir Gladys Assistant dans votre navigateur ? [o/N] " reponse
-
-    if [[ "$reponse" =~ ^[oOyY]$ ]]; then
-      if command -v xdg-open > /dev/null; then
-        xdg-open "http://$IP_LOCALE" >/dev/null 2>&1 &
-      elif command -v open > /dev/null; then
-        open "http://$IP_LOCALE" >/dev/null 2>&1 &   # macOS
-      elif command -v start > /dev/null; then
-        start "http://$IP_LOCALE" >/dev/null 2>&1 &  # Windows (Git Bash, Cygwin)
-      else
-        echo "Impossible de détecter une commande pour ouvrir le navigateur automatiquement."
-      fi
+    # Tout code 2xx/3xx signifie que le serveur répond (redirection incluse).
+    if [[ "$http_code" =~ ^[23][0-9][0-9]$ ]]; then
+      ready=true
+      break
     fi
-    
-  else
-    log_error "⚠️ Impossible d’accéder à Gladys. Vérifiez les logs de vos conteneurs."
+
+    echo -n "."
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+  echo
+
+  if [ "$ready" != "true" ]; then
+    log_error "⚠️ Impossible d’accéder à Gladys après ${STARTUP_TIMEOUT}s (dernier code HTTP : ${http_code})."
+    log_error "Vérifiez les logs avec : cd \"$INSTALL_DIR\" && docker compose logs -f"
+    return 1
   fi
 
+  log_success "🎉 Gladys Assistant est prêt et accessible à l'adresse suivante: $url"
+
+  local reponse
+  read -rp "👉 Voulez-vous ouvrir Gladys Assistant dans votre navigateur ? [o/N] " reponse
+
+  if [[ "$reponse" =~ ^[oOyY]$ ]]; then
+    if command_exists xdg-open; then
+      xdg-open "$url" >/dev/null 2>&1 &
+    elif command_exists open; then
+      open "$url" >/dev/null 2>&1 &   # macOS
+    elif command_exists start; then
+      start "$url" >/dev/null 2>&1 &  # Windows (Git Bash, Cygwin)
+    else
+      log_warn "Impossible de détecter une commande pour ouvrir le navigateur automatiquement."
+    fi
+  fi
 }
 
 # DESC: Main control flow

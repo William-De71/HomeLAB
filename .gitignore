@@ -1,40 +1,33 @@
-# Fichiers et dossiers générés par Docker
-*.log
-*.pid
-*.seed
-*.pid.lock
+# ── Artefacts générés par les scripts d'installation ──────────────────────
+# Les scripts sont la source de vérité ; les fichiers ci-dessous sont produits
+# à l'installation et propres à chaque machine. À déclarer par service.
+GladysAssistant/docker-compose.yml
+GladysAssistant/config.mk
 
-# Répertoires de données Docker
+# Surcharges locales de compose
+docker-compose.override.yml
+
+# ── Données persistantes des conteneurs ───────────────────────────────────
 volumes/
 data/
 db_data/
 logs/
-tmp/
+*.log
 
-# Fichiers d'environnement
+# ── Fichiers d'environnement (secrets) ────────────────────────────────────
 .env
 .env.*
+!.env.example
 
-# Fichiers de configuration sensibles
-docker-compose.override.yml
-
-# Fichiers système
+# ── Fichiers système et éditeurs ──────────────────────────────────────────
 .DS_Store
 Thumbs.db
-
-# Fichiers de sauvegarde d'éditeurs
 *~
 *.swp
 *.swo
 .idea/
 .vscode/
 
-# Fichiers de build
-build/
-dist/
-node_modules/ # Si vous utilisez Node.js dans vos conteneurs
-
-*.html
-*.mk
-docker-compose.yml
-temp.*
+# ── Outils locaux ─────────────────────────────────────────────────────────
+# Données de session Claude Code (permissions locales, historique)
+.claude/

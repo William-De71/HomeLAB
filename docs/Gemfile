@@ -1,0 +1,20 @@
+# Prévisualisation locale du site GitHub Pages.
+#
+#   cd docs
+#   bundle install
+#   bundle exec jekyll serve --baseurl ''
+#
+# Puis ouvrir http://localhost:4000
+#
+# Ce fichier n'est PAS utilisé par GitHub Pages, qui construit le site avec sa
+# propre chaîne d'outils. Il ne sert qu'au rendu local.
+
+source "https://rubygems.org"
+
+gem "github-pages", group: :jekyll_plugins
+gem "just-the-docs"
+
+# Dépendances retirées de la bibliothèque standard Ruby 3.4
+gem "csv"
+gem "base64"
+gem "bigdecimal"

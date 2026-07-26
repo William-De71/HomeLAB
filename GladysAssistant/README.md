@@ -21,11 +21,14 @@ Le dépôt contient plusieurs services, vous pouvez cloner **uniquement le dossi
 git clone --filter=blob:none --sparse https://github.com/William-De71/HomeLAB.git
 cd HomeLAB
 
-# 2. Choisir uniquement le dossier du service
-git sparse-checkout set GladysAssistant
+# 2. Choisir le dossier du service + les utilitaires partagés
+git sparse-checkout set common GladysAssistant
 ```
 
-Vous aurez alors uniquement le contenu du dossier GladysAssistant dans votre répertoire local.
+Vous aurez alors uniquement les dossiers `GladysAssistant` et `common` dans votre répertoire local.
+
+> ⚠️ **N'oubliez pas `common`** : les fonctions partagées (`common/utils.sh`) y sont
+> stockées et le script d'installation en a besoin pour fonctionner.
 
 ## ⚙️ Utilisation du script
 
@@ -58,17 +61,37 @@ make start
 make stop
 ```
 
+#### ⬆️ Forcer la mise à jour des images
+
+```bash
+make update
+```
+
+Récupère les dernières images, recrée les conteneurs concernés, puis supprime les images devenues obsolètes. Utile pour ne pas attendre le prochain passage de Watchtower.
+
+> Seuls les conteneurs dont l'image a réellement changé sont recréés — les autres ne sont pas redémarrés. Les données de `/var/lib/gladysassistant` ne sont pas affectées.
+
+#### 🔄 Mettre à jour les scripts d'installation
+
+```bash
+make update-repo
+```
+
+Effectue un `git pull --rebase` sur le dépôt HomeLAB (met à jour les scripts, pas les images Docker).
+
 #### 📝 Afficher les logs
 
 ```bash
 make logs
 ```
 
-#### 🧹 Nettoyer (supprimer images Docker non utilisées)
+#### 🧹 Nettoyer (supprimer les images Docker sans tag)
 
 ```bash
 make clean
 ```
+
+> Seules les images *dangling* (sans tag) sont supprimées, pour ne pas toucher aux images des autres services du homelab.
 
 #### 🗑️ Désinstaller le service
 
@@ -76,19 +99,44 @@ make clean
 make uninstall
 ```
 
+Arrête les conteneurs, supprime le `docker-compose.yml`, le `config.mk` et l'image Gladys.
+
 > ⚠️ **Note** : Si le dossier d’installation est identique au dossier du Makefile, seul le docker-compose.yml sera supprimé (sécurité pour éviter d’effacer vos sources).
+>
+> 💾 **Les données sont conservées** : la base SQLite dans `/var/lib/gladysassistant` n'est pas touchée par `make uninstall`.
+
+#### 💥 Supprimer définitivement les données
+
+```bash
+make purge-data
+```
+
+> ⚠️ **Irréversible** : supprime `/var/lib/gladysassistant` (appareils, scénarios, historique). Une confirmation explicite est demandée.
 
 ## 🔧 Options du script
 
 Les commandes make acceptent des variables pour personnaliser l’exécution :
-* -h | --help : affiche une aide
+
+* `-h` | `--help` : affiche l'aide
 
 ```bash
 make install ARGS="-h"
 ```
 
-* -v | --verbose : active les logs détaillés pendant l'execution du script d'installation
+* `-v` | `--verbose` : active les logs détaillés pendant l'exécution du script d'installation
 
 ```bash
 make install ARGS="-v"
 ```
+
+## 🔒 Notes sur la configuration générée
+
+Le `docker-compose.yml` généré suit la configuration recommandée par Gladys Assistant :
+
+| Choix | Raison |
+|---|---|
+| `privileged: true` + `/dev:/dev` | Requis par Gladys pour l'accès aux périphériques matériels (dongles Zigbee/Z-Wave, Bluetooth) sans avoir à déclarer chaque device. |
+| `network_mode: host` | Requis pour la découverte des objets connectés (mDNS, SSDP, broadcast UDP). |
+| Montage de `docker.sock` | Requis par Gladys pour gérer ses conteneurs d'extensions (Zigbee2MQTT, MQTT…). |
+| Watchtower en `--label-enable` | Ne met à jour **que** les conteneurs portant le label `com.centurylinklabs.watchtower.enable=true`, donc pas les autres services du homelab. |
+| Images épinglées | `gladysassistant/gladys:v4` plutôt que `latest`, pour des installations reproductibles. |

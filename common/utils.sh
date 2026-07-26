@@ -17,17 +17,22 @@ RESET='\033[0m' # No Color
 log() {
   local level="$1"
   local msg="$2"
-  if [ "$VERBOSE" = "true" ]; then
-    local timestamp
-    timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
-    case "$level" in
-      INFO)     echo -e "[$timestamp] [${CYAN}INFO${RESET}]  $msg" ;;
-      WARN)     echo -e "[$timestamp] [${YELLOW}WARN${RESET}]  $msg" ;;
-      ERROR)    echo -e "[$timestamp] [${RED}ERROR${RESET}] $msg" 1>&2 ;;
-      SUCCESS)  echo -e "[$timestamp] [${GREEN}SUCCESS${RESET}] $msg" ;;
-      *)        echo -e "[$timestamp] [$level] $msg" ;;
-    esac
+
+  # INFO n'est affiché qu'en mode verbeux ; les autres niveaux sont toujours
+  # visibles, sans quoi un script qui sort en erreur ne dirait rien à l'utilisateur.
+  if [ "$level" = "INFO" ] && [ "${VERBOSE:-false}" != "true" ]; then
+    return 0
   fi
+
+  local timestamp
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  case "$level" in
+    INFO)     echo -e "[$timestamp] [${CYAN}INFO${RESET}]  $msg" ;;
+    WARN)     echo -e "[$timestamp] [${YELLOW}WARN${RESET}]  $msg" ;;
+    ERROR)    echo -e "[$timestamp] [${RED}ERROR${RESET}] $msg" 1>&2 ;;
+    SUCCESS)  echo -e "[$timestamp] [${GREEN}SUCCESS${RESET}] $msg" ;;
+    *)        echo -e "[$timestamp] [$level] $msg" ;;
+  esac
 }
 
 log_success() { log "SUCCESS" "$1"; }
@@ -50,7 +55,7 @@ command_exists() {
 # OUTS: Prints missing dependencies if any are not found.
 # RETS: returns 1 if any dependencies are missing.
 check_dependencies() {
-  local dependencies=("docker" "git" "ip" "awk" "grep" "head" "cut" "curl" "yq")
+  local dependencies=("docker" "git" "ip" "awk" "grep" "head" "cut" "curl")
   local missing_deps=()
   for cmd in "${dependencies[@]}"; do
     if ! command_exists "$cmd"; then
@@ -88,41 +93,66 @@ check_docker_compose() {
   fi
 }
 
+# FUNCTION: validate_compose_file
+# DESC: Verifies that the generated docker-compose file is syntactically valid.
+# ARGS: $1: path to the docker-compose file
+# OUTS: Prints the compose error output if validation fails.
+# RETS: Exits with error if the file is invalid.
+validate_compose_file() {
+  local compose_file="$1"
+
+  if [ ! -f "$compose_file" ]; then
+    log_error "Le fichier $compose_file n'existe pas."
+    exit 1
+  fi
+
+  log_info "Validation de la syntaxe de $compose_file"
+  local compose_output
+  if ! compose_output=$(docker compose -f "$compose_file" config -q 2>&1); then
+    log_error "Le fichier $compose_file est invalide :"
+    echo "$compose_output" >&2
+    exit 1
+  fi
+  log_info "Syntaxe du fichier docker-compose valide."
+}
+
 # FUNCTION: check_container_exists
 # DESC: Verifies that no Docker containers defined in the docker-compose file already exist.
-# ARGS: None
+# ARGS: $1: path to the docker-compose file
 # OUTS: Prints error and exits if any container already exists.
 # RETS: Exits with error if a container conflict is found.
 check_container_exists() {
   # Vérifie qu’un argument a été fourni
   if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 <docker-compose-file.yml>"
+    log_error "Usage: check_container_exists <docker-compose-file.yml>"
     exit 1
   fi
 
-  local COMPOSE_FILE="$1"
+  local compose_file="$1"
 
   # Vérifier que le fichier docker-compose existe
-  if [ ! -f "$COMPOSE_FILE" ]; then
-    log_error "Le fichier $COMPOSE_FILE n'existe pas."
+  if [ ! -f "$compose_file" ]; then
+    log_error "Le fichier $compose_file n'existe pas."
     exit 1
   fi
 
-  # Récupérer la liste des services
-  services=$(docker compose config --services)
+  # Récupérer les noms de conteneurs déclarés, en interrogeant bien le fichier
+  # passé en argument (et non le compose du répertoire courant).
+  local existing_containers container_names
+  existing_containers=$(docker ps -a --format '{{.Names}}')
+  container_names=$(docker compose -f "$compose_file" config --format json \
+    | grep -oP '"container_name":\s*"\K[^"]+')
 
-  for service in $services; do
-    # Vérifier si container_name est défini dans le YAML
-    cname=$(yq ".services.$service.container_name // \"\"" "$COMPOSE_FILE")
+  local cname
+  while IFS= read -r cname; do
+    [ -z "$cname" ] && continue
+    log_info "🔍 Vérification du conteneur: $cname"
 
-    echo "🔍 Vérification du conteneur: $cname"
-
-    # Vérifier si le conteneur existe déjà
-    if docker ps -a --format '{{.Names}}' | grep -q "^${cname}\$"; then
+    if grep -qx "$cname" <<< "$existing_containers"; then
       log_error "⚠️  Le conteneur '${cname}' existe déjà. Arrêt..."
       exit 1
     fi
-  done
+  done <<< "$container_names"
 
   log_info "Aucun conflit détecté, lancement..."
 }
@@ -137,9 +167,11 @@ generate_config_mk() {
   # local domain="$2"
 
   log_info "Génération du fichier config.mk"
+  # Pas de guillemets autour de la valeur : Make les traiterait comme faisant
+  # partie du chemin, produisant des commandes du type `cd ""/path""`.
   cat > config.mk <<EOF
 # Fichier de configuration généré automatiquement
-INSTALL_DIR="${install_dir}"
+INSTALL_DIR := ${install_dir}
 EOF
   log_success "Fichier config.mk généré avec succès."
 }
@@ -150,15 +182,21 @@ EOF
 # OUTS: None
 # RETS: None
 update_repo() {
-  if [ ! -d ".git" ]; then
+  # rev-parse fonctionne depuis n'importe quel sous-dossier du dépôt, contrairement
+  # à un test sur la présence de .git dans le répertoire courant.
+  if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
     log_error "Ce n’est pas un dépôt Git."
     exit 1
   fi
-  log_info "Mise à jour du dépôt..."
-  git pull --rebase || {
+
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel)"
+
+  log_info "Mise à jour du dépôt $repo_root..."
+  git -C "$repo_root" pull --rebase || {
     log_error "Échec de la mise à jour du dépôt."
     exit 1
   }
-  log_info "Mise à jour terminée."
+  log_success "Mise à jour terminée."
 }
 

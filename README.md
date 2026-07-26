@@ -9,6 +9,27 @@ Script d'installation des services Docker de mon installation personnel
 - <a href="nextcloud"><img src="https://avatars.githubusercontent.com/u/19211038?s=200&v=4" alt="nextcloud" height="30" align="top"/></a> [`Nextcloud`](nextcloud)
 -->
 
+## Organisation du dépôt
+
+Chaque service dispose de son propre dossier, contenant son script d'installation,
+son `makefile` et sa documentation.
+
+```
+HomeLAB/
+├── common/
+│   └── utils.sh          # fonctions partagées (logs, vérifications Docker…)
+└── GladysAssistant/
+    ├── install_gladys.sh
+    ├── makefile
+    └── README.md
+```
+
+Les `docker-compose.yml` ne sont pas versionnés : ils sont **générés** par les
+scripts d'installation, qui restent la source de vérité.
+
+> En cas de clonage partiel (`sparse-checkout`), pensez à inclure `common` en plus
+> du dossier du service — voir le README de chaque service.
+
 ## Prérequis
 
 ### Installation de Docker
