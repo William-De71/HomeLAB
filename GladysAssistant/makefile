@@ -1,10 +1,13 @@
 SHELL := /bin/bash
 
-# Image épinglée : doit rester alignée avec GLADYS_IMAGE dans install_gladys.sh
-GLADYS_IMAGE ?= gladysassistant/gladys:v4
-
-# Dossier de données persistantes de Gladys sur l'hôte
-DATA_DIR ?= /var/lib/gladysassistant
+# Paramètres du service (images, dossier de données, port) : déclarés une seule
+# fois dans service.mk, lui-même sourcé par install_gladys.sh. Un fichier
+# manquant est une erreur, sans quoi `uninstall` s'exécuterait avec une image
+# vide et ne supprimerait rien.
+ifeq ("$(wildcard service.mk)","")
+  $(error service.mk introuvable — il définit GLADYS_IMAGE, WATCHTOWER_IMAGE, DATA_DIR et SERVER_PORT)
+endif
+include service.mk
 
 # Utilitaires partagés : dossier common/ à la racine du dépôt, avec repli sur
 # une copie locale pour les clonages partiels.

@@ -41,9 +41,28 @@ DOCKER_LOGGING_MAX_SIZE="10m"
 DOCKER_LOGGING_MAX_FILE="3"
 IP_LOCALE=""
 
-# Images épinglées pour garder des installations reproductibles.
-GLADYS_IMAGE="gladysassistant/gladys:v4"
-WATCHTOWER_IMAGE="nickfedor/watchtower:latest"
+# Paramètres du service (images, dossier de données, port) : déclarés une seule
+# fois dans service.mk, lui-même inclus par le makefile. Les deux consommateurs
+# partagent ainsi les mêmes valeurs, évitant qu'un `make uninstall` ne cible une
+# image différente de celle réellement installée.
+SERVICE_CONF="$SCRIPT_DIR/service.mk"
+if [ ! -f "$SERVICE_CONF" ]; then
+  echo "❌ Fichier service.mk introuvable dans $SCRIPT_DIR." >&2
+  echo "   Il définit GLADYS_IMAGE, WATCHTOWER_IMAGE, DATA_DIR et SERVER_PORT." >&2
+  exit 1
+fi
+
+# shellcheck source=service.mk
+source "$SERVICE_CONF"
+
+# Sous `set -u`, une variable absente du fichier ne serait détectée qu'au moment
+# de son usage — on échoue ici, avec un message qui nomme la variable fautive.
+for required in GLADYS_IMAGE WATCHTOWER_IMAGE DATA_DIR SERVER_PORT; do
+  if [ -z "${!required:-}" ]; then
+    echo "❌ Variable $required non définie dans $SERVICE_CONF." >&2
+    exit 1
+  fi
+done
 
 # Durée maximale d'attente du démarrage de Gladys (secondes).
 STARTUP_TIMEOUT=60
@@ -163,12 +182,12 @@ services:
     cgroup: host
     environment:
       NODE_ENV: production
-      SQLITE_FILE_PATH: /var/lib/gladysassistant/gladys-production.db
-      SERVER_PORT: 80
+      SQLITE_FILE_PATH: ${DATA_DIR:?DATA_DIR not set}/gladys-production.db
+      SERVER_PORT: ${SERVER_PORT:?SERVER_PORT not set}
       TZ: Europe/Paris
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/gladysassistant:/var/lib/gladysassistant
+      - ${DATA_DIR:?DATA_DIR not set}:${DATA_DIR:?DATA_DIR not set}
       - /dev:/dev
       - /run/udev:/run/udev:ro
     labels:
@@ -226,13 +245,18 @@ function start_stack() {
 
 # FUNCTION: test_gladys_access
 # DESC: Checks if Gladys Assistant is accessible via the detected local IP address.
-# ARGS: None (uses global IP_LOCALE)
+# ARGS: None (uses global IP_LOCALE, SERVER_PORT)
 # OUTS: Prints success or error message based on accessibility.
-# RETS: None 
+# RETS: None
 function test_gladys_access() {
   log_info "🌐 Test d'accès à Gladys Assistant"
 
+  # Le port 80 est implicite en HTTP : on ne l'ajoute à l'URL que s'il diffère,
+  # pour ne pas afficher un `http://192.168.1.10:80` inutilement verbeux.
   local url="http://${IP_LOCALE}"
+  if [ "$SERVER_PORT" != "80" ]; then
+    url="${url}:${SERVER_PORT}"
+  fi
   local elapsed=0
   local http_code=""
   local ready=false

@@ -143,6 +143,31 @@ Enchaîne quatre étapes :
 L'image est épinglée sur `gladysassistant/gladys:v4` : vous recevez les
 correctifs de la branche `v4.x` sans saut de version majeure involontaire.
 
+## Personnaliser l'installation
+
+Les paramètres du service sont regroupés dans `GladysAssistant/service.mk` :
+
+```make
+GLADYS_IMAGE=gladysassistant/gladys:v4
+WATCHTOWER_IMAGE=nickfedor/watchtower:latest
+DATA_DIR=/var/lib/gladysassistant
+SERVER_PORT=80
+```
+
+Ce fichier est la **source unique** de ces valeurs : le `makefile` l'inclut et
+`install_gladys.sh` le source. Modifier une ligne suffit donc à la propager au
+`docker-compose.yml` généré comme aux cibles `make uninstall` et `make purge-data`.
+
+{: .attention }
+> Le fichier est lu par Make **et** par Bash : n'y mettez que des affectations
+> `NOM=valeur`, sans espace autour du `=` et sans guillemets.
+
+{: .note }
+> Après modification, régénérez le compose avec `make install` (ou éditez
+> directement le `docker-compose.yml` déjà installé). Changer `DATA_DIR` sur une
+> installation existante ne déplace **pas** les données : déplacez d'abord le
+> dossier, sinon Gladys repartira sur une base vide.
+
 ## Configuration générée
 
 Le `docker-compose.yml` produit contient deux services :
