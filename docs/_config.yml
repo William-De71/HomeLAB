@@ -7,6 +7,11 @@ description: >-
 baseurl: "/HomeLAB"
 url: "https://william-de71.github.io"
 
+# URLs sans extension : `contribuer.md` est servi sous `/contribuer/`.
+# Indispensable ici — toutes les pages se lient via `{{ site.baseurl }}/page/`,
+# alors que le défaut Jekyll ne produirait que `/page.html`, d'où des 404.
+permalink: pretty
+
 # Thème disponible nativement sur GitHub Pages (aucun workflow CI nécessaire)
 remote_theme: just-the-docs/just-the-docs
 
