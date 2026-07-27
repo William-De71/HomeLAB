@@ -4,6 +4,11 @@
 GladysAssistant/docker-compose.yml
 GladysAssistant/config.mk
 
+# Le dossier _template n'est pas un service installable, mais un essai depuis
+# ce dossier ne doit pas versionner d'artefact par mégarde.
+_template/docker-compose.yml
+_template/config.mk
+
 # Surcharges locales de compose
 docker-compose.override.yml
 

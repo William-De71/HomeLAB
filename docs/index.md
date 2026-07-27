@@ -91,6 +91,7 @@ HomeLAB/
 - [Architecture]({{ site.baseurl }}/architecture/) — comment les pièces s'assemblent
 - [Services]({{ site.baseurl }}/services/) — documentation par service
 - [Ajouter un service]({{ site.baseurl }}/contribuer/) — checklist pour étendre le dépôt
+- [Dossier template]({{ site.baseurl }}/template/) — le modèle fourni et ses garde-fous
 
 ---
 

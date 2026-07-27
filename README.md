@@ -18,11 +18,20 @@ son `makefile` et sa documentation.
 HomeLAB/
 ├── common/
 │   └── utils.sh          # fonctions partagées (logs, vérifications Docker…)
+├── _template/            # dossier modèle pour ajouter un service
+│   ├── service.mk        # image, dossier de données, port (source unique)
+│   ├── install_service.sh
+│   ├── makefile
+│   └── TEMPLATE.md       # marche à suivre
 └── GladysAssistant/
     ├── install_gladys.sh
     ├── makefile
     └── README.md
 ```
+
+Pour ajouter un service, copiez `_template/` sous le nom du service et suivez
+`_template/TEMPLATE.md` — la checklist complète est dans
+[`docs/contribuer.md`](docs/contribuer.md).
 
 Les `docker-compose.yml` ne sont pas versionnés : ils sont **générés** par les
 scripts d'installation, qui restent la source de vérité.
