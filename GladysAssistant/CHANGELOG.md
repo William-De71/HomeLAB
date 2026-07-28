@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mettre à jour l'ensemble des conteneurs de l'hôte
 
 ### Added
+- `service.mk` : déclaration unique des paramètres du service (`GLADYS_IMAGE`,
+  `WATCHTOWER_IMAGE`, `DATA_DIR`, `SERVER_PORT`), inclus par le `makefile` et
+  sourcé par `install_gladys.sh`. Le `makefile` et le script échouent avec un
+  message explicite si le fichier ou une variable manque
 - Cible `make update` forçant la mise à jour des images Docker (`pull` +
   recréation des conteneurs concernés + nettoyage des images obsolètes), sans
   attendre le prochain passage de Watchtower
@@ -21,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Images Docker épinglées via les variables `GLADYS_IMAGE` / `WATCHTOWER_IMAGE`
 
 ### Changed
+- `GLADYS_IMAGE` et `DATA_DIR` ne sont plus déclarées à la fois dans le
+  `makefile` et dans `install_gladys.sh` : une mise à jour d'un seul des deux
+  fichiers pouvait conduire `make uninstall` à supprimer une image différente de
+  celle réellement installée. Les valeurs viennent désormais de `service.mk`
+- `DATA_DIR` et `SERVER_PORT` remplacent les chemins et le port codés en dur dans
+  le `docker-compose.yml` généré (le fichier produit reste identique à valeurs
+  par défaut inchangées)
 - `utils.sh` déplacé vers `common/utils.sh` à la racine du dépôt pour être
   partagé entre services ; repli sur une copie locale si `common/` est absent
   (clonage partiel). Le sparse-checkout documenté devient

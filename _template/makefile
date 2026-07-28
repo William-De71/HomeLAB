@@ -1,13 +1,16 @@
 SHELL := /bin/bash
 
-# Paramètres du service (images, dossier de données, port) : déclarés une seule
-# fois dans service.mk, lui-même sourcé par install_gladys.sh. Un fichier
+# Paramètres du service (image, dossier de données, port) : déclarés une seule
+# fois dans service.mk, lui-même sourcé par le script d'installation. Un fichier
 # manquant est une erreur, sans quoi `uninstall` s'exécuterait avec une image
 # vide et ne supprimerait rien.
 ifeq ("$(wildcard service.mk)","")
-  $(error service.mk introuvable — il définit GLADYS_IMAGE, WATCHTOWER_IMAGE, DATA_DIR et SERVER_PORT)
+  $(error service.mk introuvable — il définit SERVICE_IMAGE, DATA_DIR et SERVICE_PORT)
 endif
 include service.mk
+
+# TODO: nom du script d'installation après renommage
+INSTALL_SCRIPT ?= ./install_service.sh
 
 # Utilitaires partagés : dossier common/ à la racine du dépôt, avec repli sur
 # une copie locale pour les clonages partiels.
@@ -31,7 +34,7 @@ endif
 all: install
 
 install:
-	@./install_gladys.sh $(ARGS)
+	@$(INSTALL_SCRIPT) $(ARGS)
 
 # Force la mise à jour des images, sans attendre le prochain passage de
 # Watchtower. `up -d` ne recrée que les conteneurs dont l'image a changé.
@@ -66,7 +69,7 @@ stop:
 	@(cd "$(INSTALL_DIR)" && docker compose down)
 
 logs:
-	@echo "Logs de Gladys Assistant"
+	@echo "Logs du service"
 	@(cd "$(INSTALL_DIR)" && docker compose logs -f)
 
 # Ne supprime que les images dangling (sans tag), et non toutes les images
@@ -95,18 +98,17 @@ uninstall:
 		echo "🧹 Suppression du fichier config.mk dans $(CURDIR)"; \
 		rm -f "$(CURDIR)/config.mk"; \
 	fi
-	@echo "🧹 Suppression des images Docker Gladys Assistant"
-	@docker image rm -f $(GLADYS_IMAGE) 2>/dev/null || true
-	@echo "✅ Désinstallation de Gladys Assistant terminée."
+	@echo "🧹 Suppression des images Docker du service"
+	@docker image rm -f $(SERVICE_IMAGE) 2>/dev/null || true
+	@echo "✅ Désinstallation terminée."
 	@echo ""
-	@echo "ℹ️  Les données (base SQLite, sauvegardes) sont conservées dans $(DATA_DIR)."
+	@echo "ℹ️  Les données sont conservées dans $(DATA_DIR)."
 	@echo "    Pour les supprimer définitivement : make purge-data"
 
-# Cible séparée et confirmée : la base SQLite contient toute la configuration
-# Gladys (appareils, scénarios, historique). Sa suppression est irréversible.
+# Cible séparée et confirmée : la suppression des données persistantes est
+# irréversible, elle ne doit jamais être un effet de bord de `uninstall`.
 purge-data:
 	@echo "⚠️  ATTENTION : cette action supprime définitivement $(DATA_DIR)"
-	@echo "    (base de données, appareils, scénarios, historique)."
 	@read -rp "Tapez 'supprimer' pour confirmer : " reponse; \
 	if [ "$$reponse" = "supprimer" ]; then \
 		echo "🧹 Suppression de $(DATA_DIR)"; \

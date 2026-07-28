@@ -1,10 +1,22 @@
 #!/usr/bin/env bash
 
+# ============================================================================
+# TEMPLATE de script d'installation d'un service Docker.
+#
+# Pour créer un nouveau service :
+#   cp -r _template MonService
+#   cd MonService
+#   mv install_service.sh install_monservice.sh
+#   grep -rn "TODO" .          # puis traiter chaque marqueur
+#
+# Voir la checklist complète dans docs/contribuer.md
+# ============================================================================
+
 set -euo pipefail
 
 script_version="0.0.1" # if there is a VERSION.md in this script's folder, it will take priority for version number
 readonly script_author="wderen"
-readonly script_created="2025-08-27"
+readonly script_created="TODO-AAAA-MM-JJ" # TODO: date de création du script
 
 # ========================
 # Configuration
@@ -25,7 +37,8 @@ done
 if [ -z "$UTILS_FILE" ]; then
   echo "❌ Fichier utils.sh introuvable (cherché dans ../common/ et $SCRIPT_DIR)." >&2
   echo "   En cas de clonage partiel, incluez le dossier common/ :" >&2
-  echo "   git sparse-checkout set common GladysAssistant" >&2
+  # TODO: remplacer MonService par le nom du dossier du service
+  echo "   git sparse-checkout set common MonService" >&2
   exit 1
 fi
 
@@ -41,14 +54,14 @@ DOCKER_LOGGING_MAX_SIZE="10m"
 DOCKER_LOGGING_MAX_FILE="3"
 IP_LOCALE=""
 
-# Paramètres du service (images, dossier de données, port) : déclarés une seule
-# fois dans service.mk, lui-même inclus par le makefile. Les deux consommateurs
-# partagent ainsi les mêmes valeurs, évitant qu'un `make uninstall` ne cible une
-# image différente de celle réellement installée.
+# Paramètres du service (SERVICE_IMAGE, DATA_DIR, SERVICE_PORT) : déclarés une
+# seule fois dans service.mk, lui-même inclus par le makefile. Les deux
+# consommateurs partagent ainsi la même image, évitant qu'un `make uninstall`
+# ne cible une image différente de celle installée.
 SERVICE_CONF="$SCRIPT_DIR/service.mk"
 if [ ! -f "$SERVICE_CONF" ]; then
   echo "❌ Fichier service.mk introuvable dans $SCRIPT_DIR." >&2
-  echo "   Il définit GLADYS_IMAGE, WATCHTOWER_IMAGE, DATA_DIR et SERVER_PORT." >&2
+  echo "   Il définit SERVICE_IMAGE, DATA_DIR et SERVICE_PORT." >&2
   exit 1
 fi
 
@@ -57,14 +70,14 @@ source "$SERVICE_CONF"
 
 # Sous `set -u`, une variable absente du fichier ne serait détectée qu'au moment
 # de son usage — on échoue ici, avec un message qui nomme la variable fautive.
-for required in GLADYS_IMAGE WATCHTOWER_IMAGE DATA_DIR SERVER_PORT; do
+for required in SERVICE_IMAGE DATA_DIR SERVICE_PORT; do
   if [ -z "${!required:-}" ]; then
     echo "❌ Variable $required non définie dans $SERVICE_CONF." >&2
     exit 1
   fi
 done
 
-# Durée maximale d'attente du démarrage de Gladys (secondes).
+# Durée maximale d'attente du démarrage du service (secondes).
 STARTUP_TIMEOUT=60
 
 
@@ -81,7 +94,7 @@ Usage:
 EOF
 }
 
-# FUNCTION: parse_parameters
+# FUNCTION: parse_params
 # DESC: Parses command-line arguments and sets corresponding variables for script options.
 # ARGS: $@ (optional): List of arguments passed to the script.
 # OUTS: Sets variables indicating which options and parameters were provided.
@@ -109,19 +122,20 @@ function parse_params() {
 }
 
 # FUNCTION: ask_install_dir
-# DESC: Prompts the user for the Gladys docker compose installation directory and validates the input.
+# DESC: Prompts the user for the docker compose installation directory and validates the input.
 # ARGS: None
 # OUTS: Sets INSTALL_DIR variable and creates the directory if it does not exist.
 # RETS: None
 function ask_install_dir() {
-  read -rp "📂 Entrez le chemin pour le ficher docker compose de Gladys (ex: /opt/gladys) : " INSTALL_DIR
+  # TODO: adapter le nom du service et le chemin d'exemple.
+  read -rp "📂 Entrez le chemin pour le fichier docker compose de MonService (ex: /opt/monservice) : " INSTALL_DIR
 
   INSTALL_DIR="$(echo "$INSTALL_DIR" | xargs)"
   INSTALL_DIR="${INSTALL_DIR/#\~/$HOME}"
-  
+
   if [ -z "$INSTALL_DIR" ]; then
     log_warn "Le chemin d'installation est vide, utilisation du dossier du script."
-    INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    INSTALL_DIR="$SCRIPT_DIR"
   fi
 
   echo "$INSTALL_DIR" | grep -qE '^/' || {
@@ -132,7 +146,7 @@ function ask_install_dir() {
   if [ ! -d "$INSTALL_DIR" ]; then
     mkdir -p "$INSTALL_DIR"
   fi
-  
+
   log_info "Dossier d'installation configuré : $INSTALL_DIR"
 }
 
@@ -145,7 +159,6 @@ function get_ip() {
 
   log_info "🔍 Détection de l'interface réseau active..."
 
-  log_info "Détection de l'adresse IP locale..."
   local interface
   interface=$(ip -o link show | awk -F': ' '/state UP/ {print $2}' \
     | grep -Ev 'lo|docker|veth|virbr|br-|vmnet|tun' \
@@ -164,51 +177,31 @@ function get_ip() {
 }
 
 # FUNCTION: generate_docker_compose
-# DESC: Generates the docker-compose.yml file for Gladys and Watchtower in the installation directory.
+# DESC: Generates the docker-compose.yml file for the service in the installation directory.
 # ARGS: None (uses global INSTALL_DIR, DOCKER_LOGGING_MAX_SIZE, DOCKER_LOGGING_MAX_FILE)
 # OUTS: Creates/overwrites $INSTALL_DIR/docker-compose.yml
 # RETS: None
 function generate_docker_compose() {
   log_info "Génération du docker-compose.yml dans $INSTALL_DIR"
 
+  # Attention : `services:` doit bien figurer dans le heredoc, et les variables
+  # interpolées utilisent la forme ${VAR:?msg} pour échouer tôt si elles sont vides.
+  # TODO: décrire ici les services, volumes et ports réellement nécessaires.
   cat > "$INSTALL_DIR/docker-compose.yml" <<EOF
 services:
-  gladys:
-    image: ${GLADYS_IMAGE:?GLADYS_IMAGE not set}
-    container_name: gladys
+  monservice:
+    image: ${SERVICE_IMAGE:?SERVICE_IMAGE not set}
+    container_name: monservice
     restart: unless-stopped
-    privileged: true
-    network_mode: host
-    cgroup: host
+    ports:
+      - "${SERVICE_PORT:?SERVICE_PORT not set}:8080"
     environment:
-      NODE_ENV: production
-      SQLITE_FILE_PATH: ${DATA_DIR:?DATA_DIR not set}/gladys-production.db
-      SERVER_PORT: ${SERVER_PORT:?SERVER_PORT not set}
       TZ: Europe/Paris
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${DATA_DIR:?DATA_DIR not set}:${DATA_DIR:?DATA_DIR not set}
-      - /dev:/dev
-      - /run/udev:/run/udev:ro
+      - ${DATA_DIR:?DATA_DIR not set}:/data
     labels:
+      # À conserver uniquement si le service doit être mis à jour par Watchtower.
       com.centurylinklabs.watchtower.enable: "true"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: ${DOCKER_LOGGING_MAX_SIZE:?DOCKER_LOGGING_MAX_SIZE not set}
-        max-file: "${DOCKER_LOGGING_MAX_FILE:?DOCKER_LOGGING_MAX_FILE not set}"
-
-  watchtower:
-    image: ${WATCHTOWER_IMAGE:?WATCHTOWER_IMAGE not set}
-    container_name: watchtower
-    restart: unless-stopped
-    # --label-enable : ne met à jour que les conteneurs explicitement labellisés,
-    # pour ne pas toucher aux autres services du homelab.
-    command: --cleanup --include-restarting --label-enable
-    environment:
-      TZ: Europe/Paris
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     logging:
       driver: "json-file"
       options:
@@ -219,11 +212,10 @@ EOF
   log_success "docker-compose.yml généré dans $INSTALL_DIR"
 }
 
-
 # FUNCTION: start_stack
-# DESC: Check if Docker and Docker Compose are installed and running, then starts the Gladys stack using docker-compose.
+# DESC: Check if Docker and Docker Compose are installed and running, then starts the stack using docker-compose.
 # ARGS: None (uses global INSTALL_DIR)
-# OUTS: Starts Docker containers for Gladys and Watchtower.
+# OUTS: Starts the Docker containers of the service.
 # RETS: Exits with error if Docker or Docker Compose are not installed/running.
 function start_stack() {
   # Vérification de la présence de Docker et Docker Compose
@@ -243,27 +235,22 @@ function start_stack() {
   (cd "$INSTALL_DIR" && docker compose up -d)
 }
 
-# FUNCTION: test_gladys_access
-# DESC: Checks if Gladys Assistant is accessible via the detected local IP address.
-# ARGS: None (uses global IP_LOCALE, SERVER_PORT)
+# FUNCTION: test_service_access
+# DESC: Checks if the service is accessible via the detected local IP address.
+# ARGS: None (uses global IP_LOCALE, SERVICE_PORT, STARTUP_TIMEOUT)
 # OUTS: Prints success or error message based on accessibility.
-# RETS: None
-function test_gladys_access() {
-  log_info "🌐 Test d'accès à Gladys Assistant"
+# RETS: Returns 1 if the service is unreachable before the timeout.
+function test_service_access() {
+  log_info "🌐 Test d'accès au service"
 
-  # Le port 80 est implicite en HTTP : on ne l'ajoute à l'URL que s'il diffère,
-  # pour ne pas afficher un `http://192.168.1.10:80` inutilement verbeux.
-  local url="http://${IP_LOCALE}"
-  if [ "$SERVER_PORT" != "80" ]; then
-    url="${url}:${SERVER_PORT}"
-  fi
+  local url="http://${IP_LOCALE}:${SERVICE_PORT}"
   local elapsed=0
   local http_code=""
   local ready=false
 
-  # Attente active : Gladys peut mettre plusieurs dizaines de secondes à répondre
-  # au premier démarrage (migrations SQLite).
-  echo -n "⏳ Attente du démarrage de Gladys "
+  # Attente active : un premier démarrage (migrations, initialisation) peut
+  # prendre plusieurs dizaines de secondes avant que le service ne réponde.
+  echo -n "⏳ Attente du démarrage du service "
   while [ "$elapsed" -lt "$STARTUP_TIMEOUT" ]; do
     http_code=$(curl -k --silent --show-error --output /dev/null \
       --max-time 5 --write-out '%{http_code}' "$url" 2>/dev/null || echo "000")
@@ -281,15 +268,15 @@ function test_gladys_access() {
   echo
 
   if [ "$ready" != "true" ]; then
-    log_error "⚠️ Impossible d’accéder à Gladys après ${STARTUP_TIMEOUT}s (dernier code HTTP : ${http_code})."
+    log_error "⚠️ Impossible d'accéder au service après ${STARTUP_TIMEOUT}s (dernier code HTTP : ${http_code})."
     log_error "Vérifiez les logs avec : cd \"$INSTALL_DIR\" && docker compose logs -f"
     return 1
   fi
 
-  log_success "🎉 Gladys Assistant est prêt et accessible à l'adresse suivante: $url"
+  log_success "🎉 Le service est prêt et accessible à l'adresse suivante: $url"
 
   local reponse
-  read -rp "👉 Voulez-vous ouvrir Gladys Assistant dans votre navigateur ? [o/N] " reponse
+  read -rp "👉 Voulez-vous ouvrir le service dans votre navigateur ? [o/N] " reponse
 
   if [[ "$reponse" =~ ^[oOyY]$ ]]; then
     if command_exists xdg-open; then
@@ -311,7 +298,8 @@ function test_gladys_access() {
 function main() {
   parse_params "$@"
 
-  log_info "Démarrage de l'installation de Gladys Assistant."
+  # TODO: adapter le nom du service dans le message de démarrage.
+  log_info "Démarrage de l'installation de MonService."
   log_info "Auteur : ${script_author}"
   log_info "Date de création : ${script_created}"
   if [ -f VERSION.md ]; then
@@ -328,19 +316,19 @@ function main() {
 
   # Étapes de l'installation
   ask_install_dir
-  
+
   # génération du fichier .mk
   generate_config_mk "$INSTALL_DIR"
 
-  # étapes de configuration des certificats et docker-compose
+  # étapes de configuration du docker-compose
   get_ip
   generate_docker_compose
 
   # Vérification et démarrage des containers
   start_stack
 
-  # Tests d'accès à Gladys
-  test_gladys_access
+  # Test d'accès au service
+  test_service_access
 }
 
 # Invoke main with args if not sourced

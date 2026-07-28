@@ -129,12 +129,34 @@ make install ARGS="-h"
 make install ARGS="-v"
 ```
 
+## 🎛️ Personnaliser l'installation
+
+Les paramètres du service sont regroupés dans `service.mk` :
+
+```make
+GLADYS_IMAGE=gladysassistant/gladys:v4
+WATCHTOWER_IMAGE=nickfedor/watchtower:latest
+DATA_DIR=/var/lib/gladysassistant
+SERVER_PORT=80
+```
+
+Ce fichier est la **source unique** de ces valeurs : le `makefile` l'inclut et
+`install_gladys.sh` le source. Une modification se propage donc au `docker-compose.yml`
+généré comme aux cibles `make uninstall` et `make purge-data`.
+
+> ⚠️ Le fichier est lu par Make **et** par Bash : n'y mettez que des affectations
+> `NOM=valeur`, sans espace autour du `=` et sans guillemets.
+>
+> 💾 Changer `DATA_DIR` sur une installation existante ne déplace **pas** les
+> données : déplacez d'abord le dossier, sinon Gladys repartira sur une base vide.
+
 ## 🔒 Notes sur la configuration générée
 
 Le `docker-compose.yml` généré suit la configuration recommandée par Gladys Assistant :
 
 | Choix | Raison |
 |---|---|
+| Paramètres dans `service.mk` | Images, dossier de données et port déclarés une seule fois, partagés par le script d'installation et le makefile. |
 | `privileged: true` + `/dev:/dev` | Requis par Gladys pour l'accès aux périphériques matériels (dongles Zigbee/Z-Wave, Bluetooth) sans avoir à déclarer chaque device. |
 | `network_mode: host` | Requis pour la découverte des objets connectés (mDNS, SSDP, broadcast UDP). |
 | Montage de `docker.sock` | Requis par Gladys pour gérer ses conteneurs d'extensions (Zigbee2MQTT, MQTT…). |

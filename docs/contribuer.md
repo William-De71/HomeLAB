@@ -21,25 +21,33 @@ conventions existantes.
 
 ## 1. Créer la structure
 
+Le dépôt fournit un dossier `_template/` qui contient déjà toute la structure
+attendue et les garde-fous décrits plus bas :
+
 ```bash
-mkdir MonService
+cp -r _template MonService
 cd MonService
+mv install_service.sh install_monservice.sh
+rm TEMPLATE.md
+grep -rn "TODO" .        # puis traiter chaque marqueur
 ```
 
 Fichiers attendus :
 
 ```
 MonService/
-├── install.sh        # script d'installation
-├── makefile          # cycle de vie
-├── README.md         # doc du service
-├── CHANGELOG.md      # format Keep a Changelog
-└── VERSION.md        # version du script (ex: 0.0.1)
+├── service.mk              # image, dossier de données, port (source unique)
+├── install_monservice.sh   # script d'installation
+├── makefile                # cycle de vie
+├── README.md               # doc du service
+├── CHANGELOG.md            # format Keep a Changelog
+└── VERSION.md              # version du script (ex: 0.0.1)
 ```
 
 {: .astuce }
-> Le plus simple est de partir de `GladysAssistant/` comme modèle :
-> `cp GladysAssistant/{makefile,CHANGELOG.md,VERSION.md} MonService/`
+> La page [Dossier template]({{ site.baseurl }}/template/) décrit le contenu du
+> modèle et les garde-fous à ne pas retirer. Les sections ci-dessous en
+> détaillent le pourquoi.
 
 ## 2. Charger les utilitaires partagés
 
@@ -68,7 +76,52 @@ fi
 source "$UTILS_FILE"
 ```
 
-## 3. Respecter le flux d'installation
+## 3. Déclarer les paramètres dans `service.mk`
+
+L'image du service, son dossier de données et son port sont nécessaires **au
+script d'installation comme au makefile**. Ils sont donc déclarés une seule fois,
+dans un `service.mk` que le makefile `include` et que le script `source` :
+
+```bash
+SERVICE_IMAGE=exemple/image:1.2.3
+DATA_DIR=/var/lib/monservice
+SERVICE_PORT=8080
+```
+
+Côté script, juste après le chargement de `utils.sh` :
+
+```bash
+SERVICE_CONF="$SCRIPT_DIR/service.mk"
+if [ ! -f "$SERVICE_CONF" ]; then
+  echo "❌ Fichier service.mk introuvable dans $SCRIPT_DIR." >&2
+  exit 1
+fi
+
+# shellcheck source=service.mk
+source "$SERVICE_CONF"
+
+for required in SERVICE_IMAGE DATA_DIR SERVICE_PORT; do
+  if [ -z "${!required:-}" ]; then
+    echo "❌ Variable $required non définie dans $SERVICE_CONF." >&2
+    exit 1
+  fi
+done
+```
+
+{: .attention }
+> Le fichier est lu par Make **et** par Bash : n'y mettez que des affectations
+> `NOM=valeur`, sans espace autour du `=`, sans guillemets et sans référence à
+> une autre variable. Un `NOM = valeur` casserait le `source` Bash ; des
+> guillemets seraient conservés dans la valeur par Make, produisant des chemins
+> du type `""/var/lib/monservice""`.
+
+{: .note }
+> Sans ce partage, l'image serait déclarée des deux côtés. Une mise à jour d'un
+> seul fichier suffirait alors à ce que `make uninstall` supprime une image
+> différente de celle réellement installée — et le service générerait son compose
+> avec une autre.
+
+## 4. Respecter le flux d'installation
 
 Reprenez l'ordre des étapes, qui place les vérifications avant les actions :
 
@@ -105,15 +158,19 @@ function start_stack() {
 > lancement. Cette validation a déjà permis d'attraper un `services:` manquant
 > et un saut de ligne avalé par une substitution de commande.
 
-## 4. Écrire le makefile
+## 5. Écrire le makefile
 
 Cibles minimales attendues, pour rester cohérent entre services :
 
 ```makefile
 SHELL := /bin/bash
 
-MONSERVICE_IMAGE ?= exemple/image:1.2.3
-DATA_DIR ?= /var/lib/monservice
+# Image, dossier de données et port : déclarés une seule fois dans service.mk,
+# lui-même sourcé par le script d'installation.
+ifeq ("$(wildcard service.mk)","")
+  $(error service.mk introuvable — il définit SERVICE_IMAGE, DATA_DIR et SERVICE_PORT)
+endif
+include service.mk
 
 UTILS_FILE := $(firstword $(wildcard ../common/utils.sh utils.sh))
 
@@ -141,7 +198,7 @@ endif
 | `uninstall` | Arrêter et nettoyer, **sans toucher aux données** |
 | `purge-data` | Supprimer les données, **avec confirmation** |
 
-## 5. Conventions à respecter
+## 6. Conventions à respecter
 
 ### Sécurité et robustesse
 
@@ -176,7 +233,7 @@ log_success "Succès (toujours visible)"
 function nom_fonction() {
 ```
 
-## 6. Mettre à jour le `.gitignore`
+## 7. Mettre à jour le `.gitignore`
 
 Les artefacts générés doivent être exclus, **par service** :
 
@@ -190,7 +247,7 @@ MonService/config.mk
 > (`docker-compose.yml` seul). Ainsi, un service dont le compose serait écrit à
 > la main resterait versionné, sans exclusion silencieuse.
 
-## 7. Valider avant de committer
+## 8. Valider avant de committer
 
 ```bash
 # Syntaxe et bonnes pratiques (0 avertissement attendu)
@@ -214,7 +271,7 @@ docker compose -f "$INSTALL_DIR/docker-compose.yml" config -q && echo VALID
 > chemin relatif `../common/utils.sh` se résolve. Depuis la racine du dépôt, il
 > signalerait un faux positif `SC1091`.
 
-## 8. Mettre à jour la documentation
+## 9. Mettre à jour la documentation
 
 - [ ] `README.md` du service
 - [ ] `CHANGELOG.md` du service (section `[Unreleased]`)
@@ -247,3 +304,5 @@ Erreurs déjà corrigées dans ce dépôt, à ne pas reproduire :
 | Test sur `.git` dans le répertoire courant | Échoue depuis un sous-dossier ; utiliser `git rev-parse --show-toplevel` |
 | `docker compose config` sans `-f` | Lit le compose du répertoire courant, pas celui visé |
 | `log_error` conditionné à `--verbose` | Script qui échoue sans afficher de cause |
+| Image déclarée à la fois dans le script et le makefile | Désynchronisation silencieuse : `uninstall` supprime une autre image que celle installée. Utiliser `service.mk` |
+| Espaces autour du `=` dans `service.mk` | `source` Bash échoue (`SERVICE_IMAGE : commande introuvable`) |
